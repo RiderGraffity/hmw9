@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="uk">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+            color: #333;
+        }
+
+        .card {
+            background: #fff;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        input,
+        select,
+        button {
+            padding: 8px;
+            margin: 5px 0;
+            font-size: 16px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="card">
+        <h2>💱 Конвертер валют</h2>
+        <div>
+            <label>Сума:</label><br>
+            <input type="number" id="amount" value="1">
+        </div>
+        <div>
+            <label>З валюти:</label><br>
+            <select id="fromCurrency"></select>
+        </div>
+        <div>
+            <label>В валюту:</label><br>
+            <select id="toCurrency"></select>
+        </div>
+        <h3 id="conversionResult">Результат: -</h3>
+    </div>
+
+    <div class="card">
+        <h2>📊 Таблиця курсів традиційних валют (База: USD)</h2>
+        <table id="fiatTable">
+            <thead>
+                <tr>
+                    <th>Валюта</th>
+                    <th>Курс до USD</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>🪙 Таблиця криптовалют (Курсы до USD)</h2>
+        <table id="cryptoTable">
+            <thead>
+                <tr>
+                    <th>Криптовалюта</th>
+                    <th>Ціна в USD</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        const CACHE_TIME = 60 * 60 * 1000;
+
+        async function getCachedData(storageKey, apiUrl) {
+            const cached = localStorage.getItem(storageKey);
+            const cachedTime = localStorage.getItem(storageKey + '_time');
+            const now = new Date().getTime();
+
+            if (cached && cachedTime && (now - cachedTime < CACHE_TIME)) {
+                console.log(`Беремо ${storageKey} з localStorage 📦`);
+                return JSON.parse(cached);
+            }
+
+            try {
+                console.log(`Робимо запит до API для ${storageKey} 🌐`);
+                const response = await fetch(apiUrl);
+                if (!response.ok) throw new Error('Помилка завантаження даних');
+                const data = await response.json();
+
+                localStorage.setItem(storageKey, JSON.stringify(data));
+                localStorage.setItem(storageKey + '_time', now);
+
+                return data;
+            } catch (error) {
+                console.error(error);
+                if (cached) return JSON.parse(cached);
+                return null;
+            }
+        }
+
+        async function initApp() {
+            const fiatData = await getCachedData('fiatRates', 'https://api.exchangerate-api.com/v4/latest/USD');
+
+            const cryptoData = await getCachedData('cryptoRates', 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,ripple,cardano&vs_currencies=usd');
+
+            if (fiatData) {
+                populateFiatUI(fiatData.rates);
+            }
+
+            if (cryptoData) {
+                populateCryptoUI(cryptoData);
+            }
+        }
+
+        function populateFiatUI(rates) {
+            const fromSelect = document.getElementById('fromCurrency');
+            const toSelect = document.getElementById('toCurrency');
+            const tbody = document.querySelector('#fiatTable tbody');
+
+            fromSelect.innerHTML = '';
+            toSelect.innerHTML = '';
+            tbody.innerHTML = '';
+
+            const currencies = Object.keys(rates);
+
+            if (!rates['USD']) rates['USD'] = 1;
+
+            currencies.forEach(curr => {
+                fromSelect.add(new Option(curr, curr));
+                toSelect.add(new Option(curr, curr));
+
+                const row = tbody.insertRow();
+                row.insertCell(0).textContent = curr;
+                row.insertCell(1).textContent = rates[curr];
+            });
+
+            fromSelect.value = 'USD';
+            toSelect.value = 'EUR';
+
+            updateConversion(rates);
+        }
+
+        function populateCryptoUI(cryptoData) {
+            const tbody = document.querySelector('#cryptoTable tbody');
+            tbody.innerHTML = '';
+
+            for (const [coin, prices] of Object.entries(cryptoData)) {
+                const row = tbody.insertRow();
+                row.insertCell(0).textContent = coin.toUpperCase();
+                row.insertCell(1).textContent = `$${prices.usd}`;
+            }
+        }
+
+        async function updateConversion() {
+            const fiatCache = JSON.parse(localStorage.getItem('fiatRates'));
+            if (!fiatCache) return;
+
+            const rates = fiatCache.rates;
+            rates['USD'] = 1;
+
+            const amount = parseFloat(document.getElementById('amount').value) || 0;
+            const from = document.getElementById('fromCurrency').value;
+            const to = document.getElementById('toCurrency').value;
+
+            const amountInUSD = amount / rates[from];
+            const result = amountInUSD * rates[to];
+
+            document.getElementById('conversionResult').textContent =
+                `Результат: ${amount} ${from} = ${result.toFixed(2)} ${to}`;
+        }
+
+        document.getElementById('amount').addEventListener('input', updateConversion);
+        document.getElementById('fromCurrency').addEventListener('change', updateConversion);
+        document.getElementById('toCurrency').addEventListener('change', updateConversion);
+
+        initApp();
+    </script>
+
+</html>
